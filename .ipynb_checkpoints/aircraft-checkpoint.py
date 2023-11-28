@@ -15,7 +15,7 @@ import geopandas as gpd
 from pyproj import CRS
 from owslib.ogcapi.features import Features
 import geopandas as gpd
-import datetime
+from datetime import datetime
 from datetime import timedelta
 from functools import singledispatch
 
@@ -33,6 +33,7 @@ class AircraftDetection():
                                  "InterAgencyFirePerimeterHistory_All_Years_View",
                                  "WFIGS_current_interagency_fire_perimeters",
                                  "california_fire_perimeters_all",  
+                                 "Downloaded_InterAgencyFirePerimeterHistory_All_Years_View",
                                  "none"]
     # CONTROL - custom will need to provide their own read types
     CONTROL_TYPE = ["defined", "custom"]
@@ -43,7 +44,8 @@ class AircraftDetection():
             "WFIGS_current_interagency_fire_perimeters" : ["https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson" , "arc_gis_online"],
             "current_wildland_fire_incident_locations" :[ "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Incident_Locations_Current/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson", "arc_gis_online"],
             "california_fire_perimeters_all": [ "https://services1.arcgis.com/jUJYIo9tSA7EHvfZ/arcgis/rest/services/California_Fire_Perimeters/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson", "arc_gis_online"],
-            "InterAgencyFirePerimeterHistory_All_Years_View": [ "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/InterAgencyFirePerimeterHistory_All_Years_View/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson", "arc_gis_online"],
+            "WFIGS_Interagency_Fire_Perimeters": [ "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson", "arc_gis_online"],
+            "Downloaded_InterAgencyFirePerimeterHistory_All_Years_View": ["/projects/shared-buckets/ksharonin/Latest_Interagency_Fire_Perimeters", "shp_local"]
             }
     
     # instance initiation
@@ -155,11 +157,11 @@ class AircraftDetection():
         try:
             df = gpd.read_file(self._ds_url)
         except Exception as generic_err:
-            logger.error(f"ERR: unable to read local shp from url: {self._ds_url}, produced generic error: {generic_err}")
+            logging.error(f"ERR: unable to read local shp from url: {self._ds_url}, produced generic error: {generic_err}")
             sys.exit()
         
         # filter based on predfined conds 
-        if self._title == "nifc_interagency_history_local":
+        if self._title == "nifc_interagency_history_local" or self._title == "Downloaded_InterAgencyFirePerimeterHistory_All_Years_View":
             df = self.filter_nifc_interagency_history_local(df)
         elif self._title == "WFIGS_current_interagency_fire_perimeters":
             df = self.filter_WFIGS_current_interagency_fire_perimeters(df)
@@ -198,7 +200,7 @@ class AircraftDetection():
         gdf = gpd.read_file(location)
         
         # manually move filtering due to bug
-        df_date = datetime.datetime.fromisoformat(self._usr_start)
+        df_date = datetime.fromisoformat(self._usr_start)
         df_year = df_date.year
         df = gdf.set_crs(self._crs, allow_override=True)
         df = gdf.to_crs(self._crs)
@@ -211,7 +213,7 @@ class AircraftDetection():
             gdf['DATE_NOT_NONE'] = gdf.apply(lambda row : getattr(row, 'poly_PolygonDateTime') is not None, axis = 1)
             gdf = gdf[gdf.DATE_NOT_NONE == True]
             gdf = gdf.dropna(subset=['poly_PolygonDateTime'])
-            gdf['DATE_CUR_STAMP'] =  gdf.apply(lambda row :  datetime.datetime.fromtimestamp(getattr(row, 'poly_PolygonDateTime') / 1000.0), axis = 1)
+            gdf['DATE_CUR_STAMP'] =  gdf.apply(lambda row : datetime.fromtimestamp(getattr(row, 'poly_PolygonDateTime') / 1000.0), axis = 1)
         
         elif self._title == "california_fire_perimeters_all":
             gdf['is_valid_geometry'] = gdf['geometry'].is_valid
@@ -219,15 +221,21 @@ class AircraftDetection():
             gdf['DATE_NOT_NONE'] = gdf.apply(lambda row : getattr(row, 'ALARM_DATE') is not None, axis = 1)
             gdf = gdf[gdf.DATE_NOT_NONE == True]
             gdf = gdf.dropna(subset=['ALARM_DATE'])
-            gdf['DATE_CUR_STAMP'] =  gdf.apply(lambda row :  datetime.datetime.fromtimestamp(getattr(row, 'ALARM_DATE') / 1000.0), axis = 1)
+            gdf['DATE_CUR_STAMP'] =  gdf.apply(lambda row : datetime.fromtimestamp(getattr(row, 'ALARM_DATE') / 1000.0), axis = 1)
+            
         elif self._title == "InterAgencyFirePerimeterHistory_All_Years_View":
             gdf['is_valid_geometry'] = gdf['geometry'].is_valid
             gdf = gdf[gdf['is_valid_geometry'] == True]
-            gdf['DATE_NOT_NONE'] = gdf.apply(lambda row : getattr(row, 'ALARM_DATE') is not None, axis = 1)
+            # gdf['DATE_NOT_NONE'] = gdf.apply(lambda row : getattr(row, 'DATE_CUR') is not None, axis = 1)
+            gdf['DATE_NOT_NONE'] = gdf.apply(lambda row : getattr(row, 'poly_PolygonDateTime') is not None, axis = 1)
             gdf = gdf[gdf.DATE_NOT_NONE == True]
-            # TODO COMPLETE PROCESSING AND DATE CUR STAMP GENERATION
-            cur_format = '%Y%m%d' 
-            gdf['DATE_CUR_STAMP'] = gdf.apply(lambda row : datetime.strptime(row.DATE_CUR, cur_format), axis = 1)
+            # cur_format = '%Y%m%d' 
+            # gdf['DATE_CUR_STAMP'] = gdf.apply(lambda row : datetime.strptime(row.DATE_CUR, cur_format), axis = 1)
+            gdf['DATE_NOT_NONE'] = gdf.apply(lambda row : getattr(row, 'poly_PolygonDateTime') is not None, axis = 1)
+            gdf = gdf.dropna(subset=['poly_PolygonDateTime'])
+            gdf['DATE_CUR_STAMP'] =  gdf.apply(lambda row : datetime.fromtimestamp(getattr(row, 'poly_PolygonDateTime') / 1000.0), axis = 1)
+            # gdf = gdf.set_crs(self._crs, allow_override=True)
+            gdf = gdf.to_crs(self._crs)
 
         
         gdf['index'] = gdf.index
@@ -240,9 +248,7 @@ class AircraftDetection():
     # READ TYPE - function map; if agency not specific, then must be custom set
     READ_TYPE = {  
                     "shp_local": __set_polygon_shp_local,
-                    "raster_local": __set_polygon_set_raster_local,
                     "arc_gis_online": __set_polygon_arcgis_online,
-                    "s3": __set_polygon_s3,
                     "other": None
                 }
     
@@ -298,7 +304,7 @@ class AircraftDetection():
         
         df['DATE_NOT_NONE'] = df.apply(lambda row : getattr(row, 'poly_PolygonDateTime') is not None, axis = 1)
         df = df[df.DATE_NOT_NONE == True]
-        df['DATE_CUR_STAMP'] =  df.apply(lambda row :  datetime.datetime.fromtimestamp(getattr(row, 'poly_PolygonDateTime') / 1000.0), axis = 1)
+        df['DATE_CUR_STAMP'] =  df.apply(lambda row : datetime.fromtimestamp(getattr(row, 'poly_PolygonDateTime') / 1000.0), axis = 1)
         
         
         return df

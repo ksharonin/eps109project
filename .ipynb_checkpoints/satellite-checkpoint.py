@@ -135,6 +135,7 @@ class SatelliteDetection():
         # read out
         get_collections = Features(url=self._api_url)
         perm = get_collections.collection(self._collection)
+        print(f'DEBUG in __fetch_api_collection: extent / meta data: {perm["extent"]}')
         
         # set extent info with properties 
         self._ds_bbox = perm["extent"]["spatial"]["bbox"]
