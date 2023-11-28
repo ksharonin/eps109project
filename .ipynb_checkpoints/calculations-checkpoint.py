@@ -14,6 +14,79 @@ from owslib.ogcapi.features import Features
 from datetime import datetime, timedelta
 from botocore.exceptions import NoCredentialsError, PartialCredentialsError, EndpointConnectionError
 
+
+def run_calculations(index_pairs, feds_polygons, ref_polygons):
+        """ orchestrate all calculations; either return back to enable output write or write here"""
+        
+        calculations = { 'index_pairs': index_pairs,
+                         'ratio': [],
+                         'accuracy': [],
+                         'precision': [],
+                         'recall': [],
+                         'iou': [],
+                         'f1': [],
+                         'symm_ratio': []
+                       }
+                                 
+        for feds_ref_pair in index_pairs: # e.g. (4, 1) <- feds index 4 best matches with ref poly at index 1
+                                 
+            skip_first_key = True
+                                 
+            # no reference polygon --> attach none to tracked calculations
+            if (feds_ref_pair[1] is None):
+                for key in calculations:
+                    if skip_first_key:
+                        skip_first_key = False
+                        continue  # Skip the first key
+                    calculations[key].append(None)
+                continue
+           
+            # fetch corresponding polygons
+            feds_poly = feds_polygons[feds_polygons['index'] == feds_ref_pair[0]]
+            ref_poly = ref_polygons[ref_polygons['index'] == feds_ref_pair[1]]
+               
+            # run through calculations
+            ratio = ratioCalculation(feds_poly, ref_poly)
+            accuracy = accuracyCalculation(feds_poly, ref_poly)
+            precision = precisionCalculation(feds_poly, ref_poly)
+            recall = recallCalculation(feds_poly, ref_poly)
+            iou= IOUCalculation(feds_poly, ref_poly)
+            f1 = f1ScoreCalculation(feds_poly, ref_poly) 
+            symm_ratio = symmDiffRatioCalculation(feds_poly, ref_poly) # indep calc
+            
+            # add to tracking arr                    
+            calculations['ratio'].append(ratio)
+            calculations['accuracy'].append(accuracy)
+            calculations['precision'].append(precision)
+            calculations['recall'].append(recall)
+            calculations['iou'].append(iou)
+            calculations['f1'].append(f1)
+            calculations['symm_ratio'].append(symm_ratio)
+            
+        # verify same sizing
+        for key in calculations: 
+            assert len(calculations[key]) == len(index_pairs), f"FATAL: mismatching sizing of arr at key {key} for calculations"
+        
+        return calculations
+    
+def print_output(calculations, feds_polygons):
+        """ print output using the _calculations var"""
+        
+        for i in range(len(calculations['index_pairs'])):
+            skip_first_key = True
+            # per each --> print value at corresponding i index
+            vals = []
+            for key in calculations:
+                if skip_first_key:
+                    skip_first_key = False
+                    continue  # Skip the first key
+                vals.append(calculations[key][i])
+            print(f'CALCULATED A RESULT: POLYGON FEDS AT INDEX {calculations["index_pairs"][i][0]} AGAINST REFERENCE POLYGON AT INDEX {calculations["index_pairs"][i][1]}:')
+            print(f'Ratio: {vals[0]}, Accuracy: {vals[1]}, Precision: {vals[2]}, Recall: {vals[3]}, IOU: {vals[4]}, F1 {vals[5]}, Symmetric Ratio: {vals[6]}')
+            print(f'All measurements in units {feds_polygons.crs.axis_info[0].unit_name}')
+                                 
+        return
+    
 def areaCalculation(geom_instance):
         """ Calculate area of the object, including
             mult-row instances via loop

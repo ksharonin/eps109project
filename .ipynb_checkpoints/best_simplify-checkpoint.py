@@ -39,6 +39,8 @@ def init_best_simplify(sat_fire,
                                     base_tolerance,
                                     calc_method,
                                     lowerPref,
+                                    [],
+                                    [], 
                                     []
                                    )
     
@@ -59,7 +61,9 @@ def best_simplification (feds, nifc,
                          base_tolerance, 
                          calc_method, 
                          lowerPref,
-                         simple_history
+                         simple_history,
+                         performance_history,
+                         tolerance_history
                         ):
     """ feds: feds source
         nifc: external source to compare to
@@ -72,13 +76,15 @@ def best_simplification (feds, nifc,
         return: top_tolerance (best tolerance value from recursion)
 
     """
-    if base_tolerance <= 0:
-        return top_tolerance, simple_history
+    if base_tolerance <= 0.001:
+        return top_tolerance, simple_history, performance_history, tolerance_history
 
     # simplify + calculate performance
     simplified_feds = simplify_geometry(feds, base_tolerance)
     simple_history.append(simplified_feds)
     curr_performance = calc_method(simplified_feds, nifc)
+    performance_history.append(curr_performance)
+    tolerance_history.append(base_tolerance)
 
     # if performance "better" (depends on passed bool / method) -> persist
     if curr_performance < top_performance and lowerPref:
@@ -91,5 +97,5 @@ def best_simplification (feds, nifc,
     # reduce and keep recursing down
     base_tolerance -= 0.001
 
-    return best_simplification(feds, nifc, top_performance, top_tolerance, base_tolerance, calc_method, lowerPref, simple_history)
+    return best_simplification(feds, nifc, top_performance, top_tolerance, base_tolerance, calc_method, lowerPref, simple_history, performance_history, tolerance_history)
 
